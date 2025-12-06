@@ -29,8 +29,8 @@ def openai_call(apikey,
     base_url = None
     if model.startswith("deepseek"):
         base_url = "https://api.deepseek.com"
-    elif model.startswith("gpt-3.5-turbo"):
-        base_url = "https://api.moonshot.cn/v1"
+    elif model.startswith("gpt"):
+        base_url = "https://chatapi.zjt66.top/v1"
     client = OpenAI(
         # This is the default and can be omitted
         api_key=apikey,

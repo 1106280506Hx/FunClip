@@ -210,7 +210,7 @@ if __name__ == "__main__":
                         with gr.Column():
                             with gr.Row():
                                 llm_model = gr.Dropdown(
-                                    choices=[
+                                    choices=["gpt-5",
                                         "deepseek-chat"
                                         "qwen-plus",
                                              "gpt-3.5-turbo", 
