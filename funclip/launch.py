@@ -40,6 +40,9 @@ if __name__ == "__main__":
     audio_clipper = VideoClipper(funasr_model)
     audio_clipper.lang = args.lang
     
+    # Initialize Video Semantic Understander
+    audio_clipper.init_semantic_understander("/remote-home/share/huggingface/Qwen3-VL-8B-Instruct")
+
     server_name='127.0.0.1'
     if args.listen:
         server_name = '0.0.0.0'
@@ -165,6 +168,11 @@ if __name__ == "__main__":
                 dest_spk=video_spk_input, output_dir=output_dir, timestamp_list=timestamp_list, add_sub=True)
             return None, (sr, res_audio), message, clip_srt
     
+    def video_semantic_understanding(video_input):
+        if video_input is None:
+            return "Please upload a video first."
+        return audio_clipper.semantic_understand(video_input)
+
     # gradio interface
     theme = gr.Theme.load("funclip/utils/theme.json")
     with gr.Blocks(theme=theme) as funclip_service:
@@ -200,6 +208,8 @@ if __name__ == "__main__":
                             recog_button2 = gr.Button("👂👫 识别+区分说话人 | ASR+SD")
                 video_text_output = gr.Textbox(label="✏️ 识别结果 | Recognition Result")
                 video_srt_output = gr.Textbox(label="📖 SRT字幕内容 | RST Subtitles")
+                video_semantic_output = gr.Textbox(label="👁️ 视频语义理解 | Video Semantic Understanding")
+                semantic_button = gr.Button("👁️ 提取视频语义 | Extract Semantic Tags")
             with gr.Column():
                 with gr.Tab("🧠 LLM智能裁剪 | LLM Clipping"):
                     with gr.Column():
@@ -279,6 +289,9 @@ if __name__ == "__main__":
                                    font_color,
                                    ], 
                            outputs=[video_output, clip_message, srt_clipped])
+        semantic_button.click(video_semantic_understanding,
+                            inputs=[video_input],
+                            outputs=[video_semantic_output])
         llm_button.click(llm_inference,
                          inputs=[prompt_head, prompt_head2, video_srt_output, llm_model, apikey_input],
                          outputs=[llm_result])

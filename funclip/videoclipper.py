@@ -20,6 +20,7 @@ from moviepy.video.compositing.CompositeVideoClip import CompositeVideoClip
 from utils.subtitle_utils import generate_srt, generate_srt_clip
 from utils.argparse_tools import ArgumentParser, get_commandline_args
 from utils.trans_utils import pre_proc, proc, write_state, load_state, proc_spk, convert_pcm_to_float
+from llm.video_understanding import ShotDetector, VideoSemanticUnderstander
 
 
 class VideoClipper():
@@ -27,6 +28,45 @@ class VideoClipper():
         logging.warning("Initializing VideoClipper.")
         self.funasr_model = funasr_model
         self.GLOBAL_COUNT = 0
+        self.video_understander = None
+        self.shot_detector = None
+
+    def init_semantic_understander(self, model_path, device="cuda"):
+        try:
+            self.video_understander = VideoSemanticUnderstander(model_path=model_path, device=device)
+            self.shot_detector = ShotDetector(threshold=0.7)
+            logging.info("VideoSemanticUnderstander initialized successfully.")
+        except Exception as e:
+            logging.error(f"Failed to initialize VideoSemanticUnderstander: {e}")
+
+    def semantic_understand(self, video_path):
+        if self.video_understander is None:
+            return "Video Semantic Understanding model is not loaded."
+        
+        if not os.path.exists(video_path):
+            return "Video file not found."
+
+        try:
+            shots = self.shot_detector.detect(video_path)
+            if not shots:
+                return "No shots detected."
+                
+            results = self.video_understander.understand(video_path, shots)
+            
+            # Format output
+            output_str = ""
+            for res in results:
+                start = res['start']
+                end = res['end']
+                tags = res['tags']
+                output_str += f"Shot ({start:.2f}s - {end:.2f}s):\n"
+                for k, v in tags.items():
+                    output_str += f"  - {k}: {v}\n"
+                output_str += "\n"
+            return output_str
+        except Exception as e:
+            logging.error(f"Error during semantic understanding: {e}")
+            return f"Error: {e}"
 
     def recog(self, audio_input, sd_switch='no', state=None, hotwords="", output_dir=None):
         if state is None:
