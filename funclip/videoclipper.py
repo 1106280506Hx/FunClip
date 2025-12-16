@@ -23,6 +23,8 @@ from utils.argparse_tools import ArgumentParser, get_commandline_args
 from utils.trans_utils import pre_proc, proc, write_state, load_state, proc_spk, convert_pcm_to_float
 from llm.video_understanding import ShotDetector, VideoSemanticUnderstander
 from multi_video_concat import concat_videos
+from utils.preprocess_video import preprocess_video_once, parse_size
+from utils.preprocess_audio import preprocess_audio_once
 
 
 class VideoClipper():
@@ -393,10 +395,123 @@ def get_parser():
         default='zh',
         help="language"
     )
+    parser.add_argument(
+        "--std_fps",
+        type=int,
+        default=None,
+        help="Optional: standardize video FPS before recognition (e.g., 25). Disabled if None.",
+    )
+    parser.add_argument(
+        "--std_size",
+        type=str,
+        default=None,
+        help="Optional: standardize video resolution like 1280x720 before recognition. Disabled if None.",
+    )
+    parser.add_argument(
+        "--pre_audio_16k_mono",
+        action='store_true',
+        help="Optional: convert audio to 16k mono before recognition (video/audio).",
+    )
+    parser.add_argument(
+        "--pre_audio_rms_norm",
+        action='store_true',
+        help="Optional: RMS normalize audio before recognition.",
+    )
+    parser.add_argument(
+        "--pre_audio_highpass",
+        action='store_true',
+        help="Optional: apply simple high-pass (pre-emphasis) before recognition.",
+    )
+    parser.add_argument(
+        "--pre_audio_denoise",
+        action='store_true',
+        help="Optional: light spectral denoise before recognition.",
+    )
+    parser.add_argument(
+        "--pre_audio_damage_fix",
+        action='store_true',
+        help="Optional: basic damage fix (NaN/inf/clip) before recognition.",
+    )
+    parser.add_argument(
+        "--pre_audio_lufs_norm",
+        action='store_true',
+        help="Optional: approximate LUFS normalization before recognition.",
+    )
+    parser.add_argument(
+        "--pre_audio_trim_silence",
+        action='store_true',
+        help="Optional: trim leading/trailing silence before recognition.",
+    )
+    parser.add_argument(
+        "--pre_audio_target_lufs",
+        type=float,
+        default=-20.0,
+        help="Target LUFS when --pre_audio_lufs_norm is enabled.",
+    )
+    parser.add_argument(
+        "--pre_video_h264",
+        action='store_true',
+        help="Optional: re-encode video using H.264 (libx264).",
+    )
+    parser.add_argument(
+        "--pre_video_bitrate",
+        type=str,
+        default=None,
+        help="Optional: target video bitrate (e.g., 2M).",
+    )
+    parser.add_argument(
+        "--pre_video_cfr",
+        action='store_true',
+        help="Optional: force constant frame rate output.",
+    )
     return parser
 
 
-def runner(stage, file, sd_switch, output_dir, dest_text, dest_spk, start_ost, end_ost, output_file, config=None, lang='zh'):
+def preprocess_video_once(file_path, target_fps=None, target_size=None, to_16k_mono=False, output_dir=None):
+    clip = mpy.VideoFileClip(file_path)
+    if target_size is not None and clip.size != list(target_size):
+        clip = clip.resize(newsize=target_size)
+    if target_fps is not None:
+        clip = clip.set_fps(target_fps)
+    if to_16k_mono and clip.audio is not None:
+        temp_audio = file_path + ".tmp.wav"
+        clip.audio.write_audiofile(temp_audio, fps=16000, nbytes=2, codec="pcm_s16le", ffmpeg_params=["-ac", "1"])
+        new_audio = AudioFileClip(temp_audio)
+        clip = clip.set_audio(new_audio)
+    base = os.path.basename(file_path)
+    pre_name = "pre_" + base
+    if output_dir is None:
+        output_dir = os.path.dirname(file_path)
+    os.makedirs(output_dir, exist_ok=True)
+    out_path = os.path.join(output_dir, pre_name)
+    clip.write_videofile(out_path, fps=target_fps or clip.fps, audio_codec="aac")
+    clip.close()
+    return out_path
+
+
+def preprocess_audio_once(file_path, to_16k_mono=False, output_dir=None):
+    if not to_16k_mono:
+        return file_path
+    wav, sr = librosa.load(file_path, sr=None, mono=False)
+    if wav.ndim > 1:
+        wav = wav[0]
+    if sr != 16000:
+        wav = librosa.resample(wav, orig_sr=sr, target_sr=16000)
+        sr = 16000
+    base = os.path.basename(file_path)
+    pre_name = "pre_" + base
+    if output_dir is None:
+        output_dir = os.path.dirname(file_path)
+    os.makedirs(output_dir, exist_ok=True)
+    out_path = os.path.join(output_dir, pre_name)
+    sf.write(out_path, wav, sr)
+    return out_path
+
+
+def runner(stage, file, sd_switch, output_dir, dest_text, dest_spk, start_ost, end_ost, output_file, config=None, lang='zh',
+           std_fps=None, std_size=None, pre_audio_16k_mono=False, pre_audio_rms_norm=False, pre_audio_highpass=False,
+           pre_audio_denoise=False, pre_audio_damage_fix=False, pre_audio_lufs_norm=False, pre_audio_trim_silence=False,
+           pre_audio_target_lufs=-20.0, pre_video_h264=False, pre_video_bitrate=None, pre_video_cfr=False):
     audio_suffixs = ['.wav','.mp3','.aac','.m4a','.flac']
     video_suffixs = ['.mp4','.avi','.mkv','.flv','.mov','.webm','.ts','.mpeg']
 
@@ -433,6 +548,32 @@ def runner(stage, file, sd_switch, output_dir, dest_text, dest_spk, start_ost, e
     else:
         logging.error("Unsupported file format: {}\n\nplease choise one of the following: {}".format(file),audio_suffixs+video_suffixs)
         sys.exit(1) # exit if the file is not supported
+
+    target_size = parse_size(std_size) if std_size is not None else None
+    if stage == 1 and (std_fps is not None or target_size is not None or pre_audio_16k_mono or pre_audio_rms_norm or pre_audio_highpass or pre_audio_denoise or pre_audio_damage_fix or pre_audio_lufs_norm or pre_audio_trim_silence or pre_video_h264 or pre_video_bitrate or pre_video_cfr):
+        logging.warning("Preprocessing input with standardization options...")
+        if mode == 'video':
+            file = preprocess_video_once(file,
+                                         target_fps=std_fps,
+                                         target_size=target_size,
+                                         to_16k_mono=pre_audio_16k_mono,
+                                         force_h264=pre_video_h264,
+                                         target_bitrate=pre_video_bitrate,
+                                         force_cfr=pre_video_cfr,
+                                         output_dir=output_dir)
+            logging.warning("Preprocessed video saved to {}".format(file))
+        elif mode == 'audio':
+            file = preprocess_audio_once(file,
+                                         to_16k_mono=pre_audio_16k_mono,
+                                         rms_norm=pre_audio_rms_norm,
+                                         highpass=pre_audio_highpass,
+                                         denoise=pre_audio_denoise,
+                                         damage_fix=pre_audio_damage_fix,
+                                         lufs_norm=pre_audio_lufs_norm,
+                                         target_lufs=pre_audio_target_lufs,
+                                         trim_silence=pre_audio_trim_silence,
+                                         output_dir=output_dir)
+            logging.warning("Preprocessed audio saved to {}".format(file))
     while output_dir.endswith('/'):
         output_dir = output_dir[:-1]
     if not os.path.exists(output_dir):
