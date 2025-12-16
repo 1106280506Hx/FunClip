@@ -12,6 +12,7 @@ import logging
 import argparse
 import numpy as np
 import soundfile as sf
+from pathlib import Path
 from moviepy.editor import *
 import moviepy.editor as mpy
 from moviepy.video.tools.subtitles import SubtitlesClip, TextClip
@@ -21,6 +22,7 @@ from utils.subtitle_utils import generate_srt, generate_srt_clip
 from utils.argparse_tools import ArgumentParser, get_commandline_args
 from utils.trans_utils import pre_proc, proc, write_state, load_state, proc_spk, convert_pcm_to_float
 from llm.video_understanding import ShotDetector, VideoSemanticUnderstander
+from multi_video_concat import concat_videos
 
 
 class VideoClipper():
@@ -339,7 +341,7 @@ def get_parser():
         "--file",
         type=str,
         default=None,
-        help="Input file path",
+        help="Input file path. For multiple videos, separate paths with commas to auto-concatenate with transitions (stage 1 only).",
         required=True
     )
     parser.add_argument(
@@ -397,6 +399,32 @@ def get_parser():
 def runner(stage, file, sd_switch, output_dir, dest_text, dest_spk, start_ost, end_ost, output_file, config=None, lang='zh'):
     audio_suffixs = ['.wav','.mp3','.aac','.m4a','.flac']
     video_suffixs = ['.mp4','.avi','.mkv','.flv','.mov','.webm','.ts','.mpeg']
+
+    def parse_input_files(file_arg):
+        return [f.strip() for f in file_arg.split(',') if f.strip()]
+
+    input_files = parse_input_files(file)
+    if len(input_files) > 1:
+        if stage != 1:
+            logging.error("Multiple input files are supported only in stage 1. Please run stage 1 to generate the merged video first.")
+            sys.exit(1)
+        non_video = [f for f in input_files if os.path.splitext(f)[1].lower() not in video_suffixs]
+        if len(non_video):
+            logging.error("All multiple inputs must be video files. Non-video inputs: {}".format(non_video))
+            sys.exit(1)
+        logging.warning("Concatenating {} videos with transitions...".format(len(input_files)))
+        merged_path = concat_videos(
+            inputs=[Path(f).expanduser().resolve() for f in input_files],
+            target_size=None,
+            target_fps=25,
+            target_audio_fps=44100,
+            transition_duration=1.0,
+            output_dir=Path("examples").resolve(),
+            overwrite=True,
+        )
+        logging.warning("Merged video saved to {}".format(merged_path))
+        file = str(merged_path)
+
     _,ext = os.path.splitext(file)
     if ext.lower() in audio_suffixs:
         mode = 'audio'
