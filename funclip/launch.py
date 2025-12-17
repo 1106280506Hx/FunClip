@@ -15,7 +15,19 @@ from llm.qwen_api import call_qwen_model
 from llm.g4f_openai_api import g4f_openai_call
 from utils.trans_utils import extract_timestamps
 from introduction import top_md_1, top_md_3, top_md_4
+import time
+import logging
+from accelerate.logging import get_logger
+import sys
 
+logger = get_logger(__name__)
+if not logger.logger.handlers:
+    logger.logger.setLevel(logging.INFO)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.logger.addHandler(handler)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='argparse testing')
@@ -47,7 +59,43 @@ if __name__ == "__main__":
     if args.listen:
         server_name = '0.0.0.0'
         
+    # 1. 定义包装函数，处理 semantic_understand 返回的两个值
+    def video_semantic_understanding_wrapper(video_input):
+        if video_input is None:
+            return "Please upload a video first.", None
+        # 调用 videoclipper，获取 (UI文本, 结构化数据)
+        ui_text, raw_data = audio_clipper.semantic_understand(video_input)
+        return ui_text, raw_data
+
+    # 2. 定义包装函数，将 State 中的数据传给 generate_musical_video
+    # [修改] 移除了 tsv 参数
+    def run_music(video, m_root, semantic_state, custom_audio):
+        if not video: 
+            return None, "No video input"
         
+        if semantic_state is None:
+            return None, "⚠️ 请先点击 '提取视频语义' 按钮获取分析结果，再生成配乐。"
+            
+        timestamp = int(time.time())
+        base_name = os.path.splitext(video)[0]
+        out_path = f"{base_name}_musical_{timestamp}.mp4"
+        
+        print(f"🔄 Re-generating music video... Output: {out_path}")
+        
+        # 检查是否上传了自定义音频
+        custom_path = None
+        if custom_audio is not None:
+            custom_path = custom_audio # Gradio 返回的是文件路径
+            print(f"🎵 Using custom audio: {custom_path}")
+        
+        path, msg = audio_clipper.generate_musical_video(
+            video_path=video, 
+            music_root=m_root, 
+            output_path=out_path, 
+            shots_data_wrapper=semantic_state,
+            custom_bgm_path=custom_path # [新增参数]
+        )
+        return path, f"✅ 生成成功 (版本 {timestamp})\n{msg}"
 
     def audio_recog(audio_input, sd_switch, hotwords, output_dir):
         return audio_clipper.recog(audio_input, sd_switch, None, hotwords, output_dir=output_dir)
@@ -180,6 +228,7 @@ if __name__ == "__main__":
         # gr.Markdown(top_md_2)
         gr.Markdown(top_md_3)
         gr.Markdown(top_md_4)
+        semantic_state_data = gr.State()
         video_state, audio_state = gr.State(), gr.State()
         with gr.Row():
             with gr.Column():
@@ -245,6 +294,23 @@ if __name__ == "__main__":
                     with gr.Row():
                         video_start_ost = gr.Slider(minimum=-500, maximum=1000, value=0, step=50, label="⏪ 开始位置偏移 | Start Offset (ms)")
                         video_end_ost = gr.Slider(minimum=-500, maximum=1000, value=100, step=50, label="⏩ 结束位置偏移 | End Offset (ms)")
+                with gr.Tab("🎵 自动配乐 | Auto Music"):
+                    with gr.Row():
+                        music_root_input = gr.Textbox(label="Music Root Dir", value="/remote-home/haoningwu/xiaohuang/FunClip/music")
+                    
+                    # [新增] 自定义音乐上传组件
+                    custom_bgm_input = gr.Audio(label="[可选] 上传自定义背景音乐 (覆盖自动推荐)", type="filepath")
+                    
+                    music_btn = gr.Button("生成配乐视频 (需先提取语义)", variant="primary")
+                    music_out_video = gr.Video(label="配乐结果")
+                    music_log = gr.Textbox(label="日志")
+
+                    music_btn.click(
+                        run_music, 
+                        inputs=[video_input, music_root_input, semantic_state_data, custom_bgm_input], # 增加了 custom_bgm_input
+                        outputs=[music_out_video, music_log]
+                    )
+                    
                 with gr.Row():
                     font_size = gr.Slider(minimum=10, maximum=100, value=32, step=2, label="🔠 字幕字体大小 | Subtitle Font Size")
                     font_color = gr.Radio(["black", "white", "green", "red"], label="🌈 字幕颜色 | Subtitle Color", value='white')
@@ -289,9 +355,14 @@ if __name__ == "__main__":
                                    font_color,
                                    ], 
                            outputs=[video_output, clip_message, srt_clipped])
-        semantic_button.click(video_semantic_understanding,
-                            inputs=[video_input],
-                            outputs=[video_semantic_output])
+        # semantic_button.click(video_semantic_understanding,
+        #                     inputs=[video_input],
+        #                     outputs=[video_semantic_output])
+        semantic_button.click(
+            video_semantic_understanding_wrapper,
+            inputs=[video_input],
+            outputs=[video_semantic_output, semantic_state_data] 
+        )
         llm_button.click(llm_inference,
                          inputs=[prompt_head, prompt_head2, video_srt_output, llm_model, apikey_input],
                          outputs=[llm_result])

@@ -12,6 +12,7 @@ import logging
 import argparse
 import numpy as np
 import soundfile as sf
+import cv2
 from pathlib import Path
 from moviepy.editor import *
 import moviepy.editor as mpy
@@ -26,6 +27,11 @@ from multi_video_concat import concat_videos
 from utils.preprocess_video import preprocess_video_once, parse_size
 from utils.preprocess_audio import preprocess_audio_once
 
+from moviepy.editor import VideoFileClip, AudioFileClip, CompositeAudioClip, concatenate_videoclips, vfx
+from utils.music_manager import MusicManager 
+from utils.director import Director
+import librosa
+from utils.transitions import TransFX
 
 class VideoClipper():
     def __init__(self, funasr_model):
@@ -44,34 +50,54 @@ class VideoClipper():
             logging.error(f"Failed to initialize VideoSemanticUnderstander: {e}")
 
     def semantic_understand(self, video_path):
+        """
+        UI 调用的入口：返回格式化后的字符串(给人看) 和 结构化数据(给机器用)
+        """
         if self.video_understander is None:
-            return "Video Semantic Understanding model is not loaded."
+            return "Video Semantic Understander model is not loaded.", None
         
         if not os.path.exists(video_path):
-            return "Video file not found."
+            return "Video file not found.", None
 
         try:
-            shots = self.shot_detector.detect(video_path)
+            # 1. 检测镜头
+            shots = self.shot_detector.detect(video_path, threshold=0.7)
             if not shots:
-                return "No shots detected."
+                return "No shots detected.", None
                 
-            results = self.video_understander.understand(video_path, shots)
+            # 2. 获取理解结果 (Results List) 和 一句话摘要 (String)
+            results, global_summary = self.video_understander.understand(video_path, shots)
             
-            # Format output
-            output_str = ""
-            for res in results:
+            # 3. [关键] 格式化 UI 输出字符串，保证可读性
+            # 第一部分：全局摘要
+            ui_output = f"📝 **Global Summary**:\n{global_summary}\n\n"
+            ui_output += "-" * 30 + "\n\n"
+            ui_output += "🎬 **Shot Details**:\n"
+            
+            # 第二部分：逐个镜头的详情
+            for i, res in enumerate(results):
                 start = res['start']
                 end = res['end']
                 tags = res['tags']
-                output_str += f"Shot ({start:.2f}s - {end:.2f}s):\n"
-                for k, v in tags.items():
-                    output_str += f"  - {k}: {v}\n"
-                output_str += "\n"
-            return output_str
+                
+                # 将 tags 字典格式化为 Scene: Kitchen | Mood: Happy 这种形式
+                tag_str = " | ".join([f"{k}: {v}" for k, v in tags.items()])
+                
+                ui_output += f"• Shot {i+1} ({start:.2f}s - {end:.2f}s):\n"
+                ui_output += f"  {tag_str}\n\n"
+            
+            # 4. 打包结构化数据传给 State
+            final_data_wrapper = {
+                "shots": results,
+                "summary": global_summary
+            }
+            
+            return ui_output, final_data_wrapper
+            
         except Exception as e:
             logging.error(f"Error during semantic understanding: {e}")
-            return f"Error: {e}"
-
+            return f"Error: {e}", None
+    
     def recog(self, audio_input, sd_switch='no', state=None, hotwords="", output_dir=None):
         if state is None:
             state = {}
@@ -184,7 +210,8 @@ class VideoClipper():
 
     def video_recog(self, video_filename, sd_switch='no', hotwords="", output_dir=None):
         video = mpy.VideoFileClip(video_filename)
-        # Extract the base name, add '_clip.mp4', and 'wav'
+        
+        # 准备输出文件名
         if output_dir is not None:
             os.makedirs(output_dir, exist_ok=True)
             _, base_name = os.path.split(video_filename)
@@ -197,22 +224,40 @@ class VideoClipper():
             clip_video_file = base_name + '_clip.mp4'
             audio_file = base_name + '.wav'
 
-        if video.audio is None:
-            logging.error("No audio information found.")
-            sys.exit(1)
-
-        video.audio.write_audiofile(audio_file)
-        wav = librosa.load(audio_file, sr=16000)[0]
-        # delete the audio file after processing
-        if os.path.exists(audio_file):
-            os.remove(audio_file)
+        # state 初始化
         state = {
             'video_filename': video_filename,
             'clip_video_file': clip_video_file,
             'video': video,
         }
-        # res_text, res_srt = self.recog((16000, wav), state)
-        return self.recog((16000, wav), sd_switch, state, hotwords, output_dir)
+
+        # --- [修改点]：针对无声视频的兼容处理 ---
+        if video.audio is None:
+            logging.warning("⚠️ No audio track found in video. Skipping ASR.")
+            # 构造一个空的 state，骗过后续流程
+            state['sentences'] = [] # 空的识别结果
+            state['recog_res_raw'] = ""
+            state['timestamp'] = []
+            state['sd_sentences'] = []
+            # 直接返回空结果，不再 sys.exit(1)
+            return "", "", state
+        # -------------------------------------
+
+        # 如果有声音，走正常流程
+        try:
+            video.audio.write_audiofile(audio_file)
+            wav = librosa.load(audio_file, sr=16000)[0]
+            
+            if os.path.exists(audio_file):
+                os.remove(audio_file)
+                
+            return self.recog((16000, wav), sd_switch, state, hotwords, output_dir)
+            
+        except Exception as e:
+            # 兜底捕获音频处理错误
+            logging.error(f"Error processing audio: {e}")
+            state['sentences'] = []
+            return "", "", state
 
     def video_clip(self, 
                    dest_text, 
@@ -325,7 +370,346 @@ class VideoClipper():
             message = "No period found in the audio, return raw speech. You may check the recognition result and try other destination text."
             srt_clip = ''
         return clip_video_file, message, clip_srt
+    
+    # --- 辅助方法 1: 提取音乐节拍 ---
+    def _get_music_beats(self, audio_path):
+        """
+        使用 librosa 提取音乐节拍时间点 (秒)
+        """
+        try:
+            # 加载音频 (只读取前3分钟以节省时间，通常BGM是循环的)
+            y, sr = librosa.load(audio_path, duration=180)
+            tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
+            beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+            return beat_times
+        except Exception as e:
+            logging.error(f"Beat tracking failed for {audio_path}: {e}")
+            return []
 
+    # --- 辅助方法 2: 计算卡点时长 ---
+    def _snap_to_beat(self, clip_duration, current_global_time, beat_times):
+        """
+        寻找最近的节拍点（允许向前或向后查找，用于变速）
+        """
+        if len(beat_times) == 0:
+            return clip_duration
+            
+        target_end_time = current_global_time + clip_duration
+        
+        # 过滤出当前时间之后的 beats
+        future_beats = [b for b in beat_times if b > current_global_time + 0.5]
+        
+        if not future_beats:
+            return clip_duration
+            
+        # 找到绝对距离最近的 beat
+        closest_beat = min(future_beats, key=lambda x: abs(x - target_end_time))
+        
+        # [变速限制]：
+        # 如果最近的节拍导致速度变化过大（例如变成 0.5倍速 或 2.0倍速以上），可能导致画面崩坏
+        # 我们计算一下预期的时长
+        new_duration = closest_beat - current_global_time
+        speed_factor = clip_duration / new_duration
+        
+        # 限制：只允许 0.5x (慢放一半) 到 2.0x (快放一倍) 之间的变速
+        if 0.5 <= speed_factor <= 2.0:
+            return new_duration
+        else:
+            # 如果变速太夸张，就保持原速，或者只做轻微裁剪
+            return clip_duration
+        
+    # --- [新增] 辅助方法 3: 仅保留人声 (去除原背景音) ---
+    def _isolate_speech(self, clip, abs_start, speech_intervals):
+        """
+        核心功能：清洗音频。
+        根据 ASR 时间戳，只保留 clip 中有人说话的音频片段，其余部分（原BGM/噪音）静音。
+        """
+        if clip.audio is None:
+            return clip
+
+        # 1. 找出当前 clip 时间范围内的人声区间
+        clip_end = abs_start + clip.duration
+        valid_ranges = []
+        
+        for s, e in speech_intervals:
+            # 计算交集
+            start_overlap = max(abs_start, s)
+            end_overlap = min(clip_end, e)
+            
+            if start_overlap < end_overlap:
+                # 转换为相对于 clip 的时间 (relative time)
+                rel_s = start_overlap - abs_start
+                rel_e = end_overlap - abs_start
+                valid_ranges.append((rel_s, rel_e))
+        
+        # 2. 如果当前片段完全没有人声，直接静音
+        if not valid_ranges:
+            return clip.without_audio()
+            
+        # 3. 如果有人声，通过合成的方式只保留人声部分
+        # (比使用 fl_audio 逐帧过滤要快得多)
+        audio_segments = []
+        for s, e in valid_ranges:
+            try:
+                # 截取人声片段
+                seg = clip.audio.subclip(s, e).set_start(s)
+                # 加上微小的淡入淡出(0.1s)避免截断时的爆音(Clicking sound)
+                seg = seg.audio_fadein(0.1).audio_fadeout(0.1)
+                audio_segments.append(seg)
+            except: pass
+            
+        if not audio_segments:
+            return clip.without_audio()
+
+        # 合成新的纯人声音轨
+        new_audio = CompositeAudioClip(audio_segments)
+        return clip.set_audio(new_audio)
+
+    def _find_visual_change_point(self, video_path, start_t, end_t, threshold=0.8):
+        """
+        在指定时间段内，寻找第一个“视觉发生变化”的时间点。
+        用于将长镜头截断在动作发生处，或者如果没有动作，则后续会被限制在5s。
+        """
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            return end_t - start_t
+
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        start_frame = int(start_t * fps)
+        end_frame = int(end_t * fps)
+        
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        
+        prev_hist = None
+        detected_relative_time = end_t - start_t # 默认返回全长
+        
+        curr_frame_idx = start_frame
+        
+        while curr_frame_idx < end_frame:
+            ret, frame = cap.read()
+            if not ret: break
+            
+            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+            hist = cv2.calcHist([hsv], [0], None, [256], [0, 256])
+            cv2.normalize(hist, hist, 0, 1, cv2.NORM_MINMAX)
+            
+            if prev_hist is not None:
+                score = cv2.compareHist(prev_hist, hist, cv2.HISTCMP_CORREL)
+                # 如果相似度低于阈值 (0.8)，说明画面变了 (子镜头)
+                # 且为了避免太碎，我们要求至少过了 1 秒
+                relative_sec = (curr_frame_idx - start_frame) / fps
+                
+                if score < threshold and relative_sec > 1.0:
+                    detected_relative_time = relative_sec
+                    break # 找到第一个变化点就停止
+            
+            prev_hist = hist
+            curr_frame_idx += 1
+            
+        cap.release()
+        return detected_relative_time
+    
+    # --- 核心主方法 ---
+    def generate_musical_video(self, video_path, music_root, output_path, shots_data_wrapper=None, custom_bgm_path=None):
+        """
+        全自动配乐与转场生成 (单曲循环 + 炫酷转场 + 音频防重叠 + 支持自定义音乐)
+        :param custom_bgm_path: [新增] 用户上传的音乐路径，如果存在则优先使用
+        """
+        logging.info(f"Processing Auto-Music for: {video_path}")
+        
+        # =================================================
+        # 步骤 1: 视觉理解
+        # =================================================
+        if self.video_understander is None:
+            return None, "Error: Semantic Understander not initialized"
+
+        if shots_data_wrapper is None:
+            logging.info("No pre-calculated tags provided, running inference...")
+            shots = self.shot_detector.detect(video_path, threshold=0.85)
+            shots_list, global_summary = self.video_understander.understand(video_path, shots)
+        else:
+            logging.info("Using pre-calculated semantic tags from UI.")
+            shots_list = shots_data_wrapper['shots']
+            global_summary = shots_data_wrapper['summary']
+
+        # =================================================
+        # 步骤 2: 音乐选择 (优先使用自定义，否则检索)
+        # =================================================
+        bgm_path = None
+        
+        # [修改点]：检查自定义音乐
+        if custom_bgm_path and os.path.exists(custom_bgm_path):
+            logging.info(f"🎵 Using custom BGM provided by user: {custom_bgm_path}")
+            bgm_path = custom_bgm_path
+        else:
+            logging.info(f"🔍 Retrieving music for summary: {global_summary}")
+            mm = MusicManager(music_root)
+            bgm_path = mm.retrieve_track(global_summary)
+        
+        if not bgm_path:
+            return None, "Error: No matching music found or custom BGM is invalid."
+        logging.info(f"Selected BGM: {bgm_path}")
+
+        bgm_beats = self._get_music_beats(bgm_path)
+        
+        # =================================================
+        # 步骤 3: 转场规划
+        # =================================================
+        logging.info("Planning transitions...")
+        director = Director(None) 
+        transitions = director.decide_transitions(shots_list)
+        
+        # =================================================
+        # 步骤 4: 视觉渲染 (含智能剪辑、卡点、特效)
+        # =================================================
+        logging.info("Step 4: Rendering Visuals...")
+        original_video = VideoFileClip(video_path)
+        processed_clips = []
+        
+        current_global_time = 0.0
+        
+        # 预处理人声时间戳 (用于去除原声背景音)
+        # 注意：这里需要先跑一次 video_recog 才能拿到 state
+        _, _, state = self.video_recog(video_path)
+        asr_sentences = state.get('sentences', [])
+        speech_timestamps = [] 
+        for sent in asr_sentences:
+            s = sent['timestamp'][0][0] / 1000.0
+            e = sent['timestamp'][-1][1] / 1000.0
+            speech_timestamps.append((s, e))
+        
+        for i, shot in enumerate(shots_list):
+            start_t = shot['start']
+            end_t = shot['end']
+            original_dur = end_t - start_t
+            
+            # --- 智能剪辑逻辑 ---
+            # 检查人声覆盖
+            has_speech = False
+            for s, e in speech_timestamps:
+                if max(start_t, s) < min(end_t, e):
+                    has_speech = True
+                    break
+            
+            target_cut_duration = original_dur
+            if has_speech:
+                logging.info(f"Shot {i}: Has speech, keeping full duration.")
+            else:
+                # 局部视觉检测 (防拖沓)
+                visual_change_time = self._find_visual_change_point(video_path, start_t, end_t, threshold=0.85)
+                limit_dur = 5.0
+                if visual_change_time < original_dur:
+                    target_cut_duration = min(visual_change_time, limit_dur)
+                else:
+                    target_cut_duration = min(original_dur, limit_dur)
+
+            # 计算转场
+            trans_duration = 0.0
+            trans_type = "cut"
+            if i > 0 and (i-1) < len(transitions):
+                trans_info = transitions[i-1]
+                trans_type = trans_info['type']
+                trans_duration = trans_info['duration']
+
+            # 计算卡点 (基于智能剪辑后的时长)
+            net_duration = self._snap_to_beat(target_cut_duration, current_global_time, bgm_beats)
+
+            # 计算物理总时长
+            gross_duration = net_duration + trans_duration
+            
+            # 切割视频
+            actual_end_t = min(start_t + gross_duration, original_video.duration)
+            clip = original_video.subclip(start_t, actual_end_t)
+            
+            # 去除原背景音 (只留人声)
+            clip = self._isolate_speech(clip, start_t, speech_timestamps)
+            
+            # 变速处理
+            current_clip_dur = clip.duration
+            if abs(current_clip_dur - gross_duration) > 0.05 and gross_duration > 0.1:
+                speed_factor = current_clip_dur / gross_duration
+                if 0.5 <= speed_factor <= 2.0:
+                    try: clip = clip.fx(vfx.speedx, speed_factor)
+                    except: pass
+            
+            # 应用转场特效
+            if trans_duration > 0:
+                try:
+                    if trans_type == "slide_left": clip = TransFX.slide_in(clip, trans_duration, 'left')
+                    elif trans_type == "slide_up": clip = TransFX.slide_in(clip, trans_duration, 'up')
+                    elif trans_type == "zoom_in": clip = TransFX.zoom_in(clip, trans_duration)
+                    elif trans_type == "crossfade": clip = clip.crossfadein(trans_duration)
+                    elif trans_type == "fade_black": clip = clip.fadein(trans_duration)
+                    elif trans_type == "glitch": clip = TransFX.glitch(clip, trans_duration)
+                except: pass
+
+            processed_clips.append(clip)
+            current_global_time += net_duration
+
+        # --- 4.2 智能拼接 (含音频防重叠) ---
+        logging.info("Compositing layers...")
+        final_layers = []
+        cursor = 0.0
+        
+        for idx, clip in enumerate(processed_clips):
+            t_dur = 0.0
+            if idx > 0 and (idx-1) < len(transitions):
+                t_dur = transitions[idx-1]['duration']
+            
+            start_pos = cursor - t_dur
+            if start_pos < 0: start_pos = 0
+            
+            # 音频防重叠处理
+            if idx > 0:
+                prev_clip = final_layers[-1]
+                prev_audio_allowed_duration = start_pos - prev_clip.start
+                if prev_clip.audio is not None and prev_audio_allowed_duration > 0:
+                    new_audio = prev_clip.audio.subclip(0, prev_audio_allowed_duration)
+                    new_audio = new_audio.audio_fadeout(0.05)
+                    final_layers[-1] = prev_clip.set_audio(new_audio)
+
+            clip = clip.set_start(start_pos)
+            final_layers.append(clip)
+            cursor = start_pos + clip.duration
+            
+        final_video_clip = CompositeVideoClip(final_layers)
+        
+        # 裁剪总时长
+        total_dur = final_layers[-1].end
+        final_video_clip = final_video_clip.subclip(0, total_dur)
+
+        # =================================================
+        # 步骤 5: 音频混合 (BGM + 只有人声的原音)
+        # =================================================
+        logging.info("Step 5: Mixing Audio Layers...")
+        final_audio_layers = []
+        if final_video_clip.audio:
+            final_audio_layers.append(final_video_clip.audio)
+        
+        try:
+            bgm = AudioFileClip(bgm_path)
+            # 循环铺满
+            if bgm.duration < final_video_clip.duration:
+                bgm = bgm.fx(vfx.loop, duration=final_video_clip.duration)
+            else:
+                bgm = bgm.subclip(0, final_video_clip.duration)
+            
+            bgm = bgm.audio_fadein(1.0).audio_fadeout(1.0)
+            bgm = bgm.volumex(0.3) # 设定背景音量
+            final_audio_layers.append(bgm)
+        except Exception as e:
+            logging.error(f"Error mixing BGM: {e}")
+
+        if final_audio_layers:
+            final_video_clip.audio = CompositeAudioClip(final_audio_layers)
+        
+        # =================================================
+        # 步骤 6: 导出
+        # =================================================
+        logging.info(f"Writing result to {output_path}...")
+        final_video_clip.write_videofile(output_path, audio_codec='aac')
+        
+        return output_path, f"Success.\nBGM: {os.path.basename(bgm_path)}\nSummary: {global_summary}"
 
 def get_parser():
     parser = ArgumentParser(
