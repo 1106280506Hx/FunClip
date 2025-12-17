@@ -153,12 +153,21 @@ class PreviewAndExportUI:
         返回:
             (预览视频路径, 视频信息文本)
         """
+        print(f"[预览管理器] 🔄 开始更新预览...")
+        
         if not video_path or not os.path.exists(video_path):
+            print(f"[预览管理器] ⚠️ 视频路径无效: {video_path}")
             return None, "⚠️ 请先选择或生成视频"
         
+        print(f"[预览管理器] 📁 视频路径: {video_path}")
+        
         # 获取视频信息
+        print(f"[预览管理器] 📊 获取视频信息...")
         info = self.preview_manager.get_video_info(video_path)
         info_text = self.preview_manager.format_video_info(info)
+        
+        print(f"[预览管理器] ✅ 预览更新完成")
+        print(f"[预览管理器] 📊 视频信息: {info.get('width')}x{info.get('height')}, {info.get('duration'):.1f}s, {info.get('file_size_mb'):.2f}MB")
         
         return video_path, info_text
     
@@ -179,8 +188,17 @@ class PreviewAndExportUI:
         返回:
             (导出的视频路径, 日志消息)
         """
+        print("\n" + "="*80)
+        print("[导出管理器] 🚀 开始导出视频")
+        print("="*80)
+        
         if not video_path or not os.path.exists(video_path):
-            return None, "❌ 请先选择或生成视频"
+            print(f"[导出管理器] ❌ 视频路径无效: {video_path}")
+            return None, "❌ 请先选择或生成视频", None, "❌ 导出失败"
+        
+        print(f"[导出管理器] 📁 输入视频: {video_path}")
+        print(f"[导出管理器] 📐 分辨率: {resolution}")
+        print(f"[导出管理器] 🎯 平台: {platform}")
         
         # 生成输出路径，兼容用户填写目录或缺失扩展名的情况
         output_path = (output_path or "").strip()
@@ -189,21 +207,36 @@ class PreviewAndExportUI:
             platform_suffix = platform.split('/')[0]
             res_suffix = resolution.split('/')[0] if '/' in resolution else resolution
             output_path = f"{base_name}_export_{platform_suffix}_{res_suffix}.mp4"
+            print(f"[导出管理器] 📋 自动生成输出路径: {output_path}")
         if os.path.isdir(output_path):
             base_name = os.path.splitext(os.path.basename(video_path))[0]
             platform_suffix = platform.split('/')[0]
             res_suffix = resolution.split('/')[0] if '/' in resolution else resolution
             output_path = os.path.join(output_path, f"{base_name}_export_{platform_suffix}_{res_suffix}.mp4")
+            print(f"[导出管理器] 📁 补全目录路径: {output_path}")
         if not os.path.splitext(output_path)[1]:
             output_path = f"{output_path}.mp4"
+            print(f"[导出管理器] 📝 添加文件扩展名: {output_path}")
+        
+        print(f"[导出管理器] 💾 最终输出路径: {output_path}")
         
         # 处理自定义参数
         custom_bitrate = custom_bitrate.strip() if custom_bitrate else None
+        if custom_width or custom_height:
+            print(f"[导出管理器] ⚙️ 自定义分辨率: {custom_width}x{custom_height}")
+        if custom_bitrate:
+            print(f"[导出管理器] ⚙️ 自定义比特率: {custom_bitrate}")
+        if custom_fps:
+            print(f"[导出管理器] ⚙️ 自定义帧率: {custom_fps} fps")
         
         # 确保输出目录存在
-        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+            print(f"[导出管理器] 📂 确保输出目录存在: {output_dir}")
 
         # 导出视频
+        print(f"[导出管理器] ⏳ 开始导出处理...")
         success, message = self.export_manager.export_video(
             video_path=video_path,
             output_path=output_path,
@@ -216,10 +249,16 @@ class PreviewAndExportUI:
         )
         
         if success:
+            print(f"[导出管理器] ✅ 导出成功!")
+            print(f"[导出管理器] 📊 获取导出视频信息...")
             info = self.preview_manager.get_video_info(output_path)
             info_text = self.preview_manager.format_video_info(info)
+            print(f"[导出管理器] 🎉 完成! 文件: {output_path}")
+            print("="*80 + "\n")
             return output_path, message, output_path, info_text
         else:
+            print(f"[导出管理器] ❌ 导出失败")
+            print("="*80 + "\n")
             return None, message, None, "❌ 导出失败"
 
     def handle_export_preview(
@@ -234,30 +273,50 @@ class PreviewAndExportUI:
         preview_seconds: int = 3
     ) -> Tuple[Optional[str], str, str]:
         """
-        生成短预览片段（仅前3秒），用于在导出前查看效果
+        生成短预览片段(仅前3秒)，用于在导出前查看效果
         返回: (预览视频路径, 视频信息文本, 日志)
         """
+        print("\n" + "="*80)
+        print("[预览导出] 🎬 开始生成预览片段")
+        print("="*80)
+        
         if not video_path or not os.path.exists(video_path):
+            print(f"[预览导出] ❌ 视频路径无效: {video_path}")
             return None, "❌ 请先选择或生成视频", "❌ 请先选择或生成视频"
 
+        print(f"[预览导出] 📁 输入视频: {video_path}")
+        print(f"[预览导出] ⏱️ 预览时长: {preview_seconds}秒")
+        print(f"[预览导出] 📐 目标分辨率: {resolution}")
+        print(f"[预览导出] 🎯 目标平台: {platform}")
+        
         try:
+            print(f"[预览导出] 🔧 加载视频...")
             clip = VideoFileClip(video_path)
             duration = clip.duration
             sub_duration = min(duration, preview_seconds)
+            print(f"[预览导出] ✂️ 截取前 {sub_duration:.1f}秒 (总时长: {duration:.1f}秒)")
             clip = clip.subclip(0, sub_duration)
 
             # 解析目标分辨率
             original_width, original_height = clip.size
+            print(f"[预览导出] 📏 原始分辨率: {original_width}x{original_height}")
+            
             if custom_width and custom_height:
                 target_width, target_height = int(custom_width), int(custom_height)
+                print(f"[预览导出] ⚙️ 使用自定义分辨率: {target_width}x{target_height}")
             elif resolution != "原始/Original" and resolution in ExportManager.RESOLUTION_PRESETS:
                 target_width, target_height = ExportManager.RESOLUTION_PRESETS[resolution]
                 if original_width < target_width or original_height < target_height:
                     target_width, target_height = original_width, original_height
+                    print(f"[预览导出] ℹ️ 原始分辨率小于目标，保持原始分辨率")
+                else:
+                    print(f"[预览导出] 📐 使用预设分辨率: {target_width}x{target_height}")
             else:
                 target_width, target_height = original_width, original_height
+                print(f"[预览导出] 📐 保持原始分辨率")
 
             if (target_width, target_height) != (original_width, original_height):
+                print(f"[预览导出] 🔄 调整分辨率: {original_width}x{original_height} → {target_width}x{target_height}")
                 clip = clip.resize((target_width, target_height))
 
             # 生成预览文件路径
@@ -265,10 +324,14 @@ class PreviewAndExportUI:
                 "/tmp",
                 f"funclip_export_preview_{int(time.time())}.mp4"
             )
+            print(f"[预览导出] 💾 临时文件路径: {preview_path}")
 
             # 轻量编码，降低码率加快出片
             bitrate = (custom_bitrate.strip() if custom_bitrate else None) or "1500k"
             fps = int(custom_fps) if custom_fps else None
+            print(f"[预览导出] ⚙️ 编码参数: 码率={bitrate}, 帧率={fps or '原始'}, 预设=superfast")
+            print(f"[预览导出] ⏳ 开始编码导出...")
+            
             clip.write_videofile(
                 preview_path,
                 codec="libx264",
@@ -282,9 +345,13 @@ class PreviewAndExportUI:
 
             clip.close()
 
+            print(f"[预览导出] ✅ 预览生成成功!")
+            print(f"[预览导出] 📊 获取预览视频信息...")
             info = self.preview_manager.get_video_info(preview_path)
             info_text = self.preview_manager.format_video_info(info)
             log = f"✅ 预览生成成功 (前{sub_duration:.1f}s)\n路径: {preview_path}\n分辨率: {target_width}x{target_height}\n码率: {bitrate}"
+            print(f"[预览导出] 🎉 完成! 文件: {preview_path}")
+            print("="*80 + "\n")
             return preview_path, info_text, log
         except Exception as e:
             try:
@@ -292,6 +359,8 @@ class PreviewAndExportUI:
             except Exception:
                 pass
             err = f"❌ 预览生成失败: {e}"
+            print(f"[预览导出] ❌ 生成失败: {e}")
+            print("="*80 + "\n")
             return None, err, err
     
     def handle_batch_export(
@@ -307,16 +376,32 @@ class PreviewAndExportUI:
         返回:
             (None, 批量导出日志)
         """
+        print("\n" + "="*80)
+        print("[批量导出] 📦 开始批量导出")
+        print("="*80)
+        
         if not video_path or not os.path.exists(video_path):
+            print(f"[批量导出] ❌ 视频路径无效: {video_path}")
             return None, "❌ 请先选择或生成视频"
         
         if not batch_resolutions or not batch_platforms:
+            print(f"[批量导出] ❌ 未选择分辨率或平台")
             return None, "❌ 请至少选择一个分辨率和一个平台"
+        
+        print(f"[批量导出] 📁 输入视频: {video_path}")
+        print(f"[批量导出] 📐 分辨率列表: {', '.join(batch_resolutions)}")
+        print(f"[批量导出] 🎯 平台列表: {', '.join(batch_platforms)}")
+        print(f"[批量导出] 💾 输出目录: {batch_output_dir}")
+        
+        total_tasks = len(batch_resolutions) * len(batch_platforms)
+        print(f"[批量导出] 📊 总任务数: {total_tasks} ({len(batch_resolutions)}分辨率 × {len(batch_platforms)}平台)")
         
         # 创建输出目录
         os.makedirs(batch_output_dir, exist_ok=True)
+        print(f"[批量导出] 📂 确保输出目录存在: {batch_output_dir}")
         
         # 批量导出
+        print(f"[批量导出] ⏳ 开始批量导出处理...")
         results = self.export_manager.batch_export(
             video_path=video_path,
             output_dir=batch_output_dir,
@@ -324,14 +409,19 @@ class PreviewAndExportUI:
             platforms=batch_platforms
         )
         
+        # 统计结果
+        success_count = sum(1 for success, _ in results.values() if success)
+        fail_count = len(results) - success_count
+        
+        print(f"[批量导出] ✅ 批量导出完成!")
+        print(f"[批量导出] 📊 成功: {success_count}/{total_tasks}, 失败: {fail_count}/{total_tasks}")
+        
         # 格式化结果
         message = f"📦 批量导出完成!\n"
         message += f"📁 输出目录: {batch_output_dir}\n"
         message += f"📊 总计: {len(results)} 个文件\n\n"
-        
-        success_count = sum(1 for success, _ in results.values() if success)
         message += f"✅ 成功: {success_count}\n"
-        message += f"❌ 失败: {len(results) - success_count}\n\n"
+        message += f"❌ 失败: {fail_count}\n\n"
         message += "=" * 50 + "\n\n"
         
         for filename, (success, msg) in results.items():
@@ -340,6 +430,9 @@ class PreviewAndExportUI:
             if not success:
                 message += f"   错误: {msg}\n"
             message += "\n"
+        
+        print(f"[批量导出] 🎉 全部完成! 成功: {success_count}, 失败: {fail_count}")
+        print("="*80 + "\n")
         
         return None, message, None, "批量导出完成"
 
