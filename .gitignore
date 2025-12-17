@@ -3,4 +3,5 @@
 *.DS_Store
 ClipVideo/clipvideo/output
 *__pycache__
-*.spec
+*.specflash_attn-*.whl
+flash_attn-*.whl
