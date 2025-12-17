@@ -16,6 +16,7 @@ from llm.g4f_openai_api import g4f_openai_call
 from utils.trans_utils import extract_timestamps
 from introduction import top_md_1, top_md_3, top_md_4
 from utils.preview_components import create_integrated_preview_export_ui
+from utils.style_manager import StyleTemplateManager
 import time
 import logging
 from accelerate.logging import get_logger
@@ -55,6 +56,13 @@ if __name__ == "__main__":
     
     # Initialize Video Semantic Understander
     audio_clipper.init_semantic_understander("/remote-home/share/huggingface/Qwen3-VL-8B-Instruct")
+    
+    # Initialize Style Template Manager
+    print("[启动] 正在初始化风格模板管理器...")
+    style_manager = StyleTemplateManager()
+    template_count = len(style_manager.get_available_templates())
+    print(f"[启动] ✅ 风格模板管理器已初始化，可用模板: {template_count} 个")
+    print(f"[启动] 📋 模板列表: {', '.join(style_manager.get_available_templates()[:3])}...")
 
     server_name='127.0.0.1'
     if args.listen:
@@ -221,6 +229,68 @@ if __name__ == "__main__":
         if video_input is None:
             return "Please upload a video first."
         return audio_clipper.semantic_understand(video_input)
+    
+    # 风格模板相关函数
+    def get_style_template_info(template_name):
+        """获取风格模板详细信息"""
+        print(f"[风格模板] 正在获取模板信息: {template_name}")
+        if not template_name:
+            return "请选择一个风格模板"
+        info = style_manager.preview_template_info(template_name)
+        print(f"[风格模板] ✅ 已生成模板信息 ({len(info)} 字符)")
+        return info
+    
+    def apply_style_template(video_input, template_name, apply_color, apply_filters, apply_speed):
+        """应用风格模板到视频"""
+        print(f"\n{'='*60}")
+        print(f"[风格应用] 开始应用风格模板")
+        print(f"{'='*60}")
+        
+        if video_input is None:
+            print("[风格应用] ❌ 错误: 没有输入视频")
+            return None, "❌ 请先上传或生成视频"
+        
+        if not template_name:
+            print("[风格应用] ❌ 错误: 未选择模板")
+            return None, "❌ 请选择风格模板"
+        
+        print(f"[风格应用] 📹 输入视频: {os.path.basename(video_input)}")
+        print(f"[风格应用] 🎨 选择模板: {template_name}")
+        print(f"[风格应用] ⚙️  应用选项:")
+        print(f"[风格应用]    - 色彩分级: {'✅' if apply_color else '❌'}")
+        print(f"[风格应用]    - 滤镜效果: {'✅' if apply_filters else '❌'}")
+        print(f"[风格应用]    - 速度调整: {'✅' if apply_speed else '❌'}")
+        
+        # 生成输出路径
+        timestamp = int(time.time())
+        base_name = os.path.splitext(os.path.basename(video_input))[0]
+        output_path = os.path.join(
+            os.path.dirname(video_input),
+            f"{base_name}_styled_{timestamp}.mp4"
+        )
+        print(f"[风格应用] 💾 输出路径: {os.path.basename(output_path)}")
+        print(f"[风格应用] 🔄 开始处理视频...")
+        
+        # 应用风格
+        success, message, config = style_manager.apply_style_to_video(
+            video_path=video_input,
+            output_path=output_path,
+            template_name=template_name,
+            apply_color_grading=apply_color,
+            apply_filters=apply_filters,
+            apply_speed=apply_speed
+        )
+        
+        if success:
+            print(f"[风格应用] ✅ 处理完成!")
+            print(f"[风格应用] 📊 应用的效果: {', '.join(config.get('effects', []))}")
+            print(f"{'='*60}\n")
+            return output_path, message
+        else:
+            print(f"[风格应用] ❌ 处理失败")
+            print(f"[风格应用] 错误信息: {message}")
+            print(f"{'='*60}\n")
+            return None, message
 
     # gradio interface
     theme = gr.Theme.load("funclip/utils/theme.json")
@@ -314,6 +384,49 @@ if __name__ == "__main__":
                 
                 # 🎬 预览与导出 Tab
                 preview_export_components = create_integrated_preview_export_ui()
+                
+                # 🎨 风格模板 Tab (UI组件定义)
+                with gr.Tab("🎨 风格模板 | Style Templates"):
+                    gr.Markdown("""
+                    ### 一键应用专业视频风格
+                    
+                    💡 **提示**：应用风格后会自动更新预览，并可在"预览与导出"Tab中导出
+                    """)
+                    
+                    with gr.Row():
+                        style_template_dropdown = gr.Dropdown(
+                            choices=style_manager.get_available_templates(),
+                            value=style_manager.get_available_templates()[0] if style_manager.get_available_templates() else None,
+                            label="🎨 选择风格模板",
+                            info="选择预设的视频风格"
+                        )
+                    
+                    style_template_info = gr.Markdown(
+                        value=style_manager.preview_template_info(style_manager.get_available_templates()[0]) if style_manager.get_available_templates() else "无可用模板",
+                        label="模板信息"
+                    )
+                    
+                    with gr.Accordion("⚙️ 应用选项", open=True):
+                        with gr.Row():
+                            apply_color_grading = gr.Checkbox(
+                                label="应用色彩分级",
+                                value=True,
+                                info="调整亮度、对比度、饱和度等"
+                            )
+                            apply_filters = gr.Checkbox(
+                                label="应用滤镜效果",
+                                value=True,
+                                info="应用模板预设的滤镜"
+                            )
+                            apply_speed = gr.Checkbox(
+                                label="应用速度调整",
+                                value=False,
+                                info="根据模板调整视频速度（慎用）"
+                            )
+                    
+                    apply_style_btn = gr.Button("✨ 应用风格模板", variant="primary", size="lg")
+                    style_output_video = gr.Video(label="风格化结果")
+                    style_message = gr.Textbox(label="处理信息", lines=6)
                     
                 with gr.Row():
                     font_size = gr.Slider(minimum=10, maximum=100, value=32, step=2, label="🔠 字幕字体大小 | Subtitle Font Size")
@@ -393,6 +506,50 @@ if __name__ == "__main__":
                                    ],
                            outputs=[video_output, audio_output, clip_message, srt_clipped])
         
+        # 🎨 风格模板功能的回调绑定
+        # 风格模板选择变化时更新信息
+        style_template_dropdown.change(
+            get_style_template_info,
+            inputs=[style_template_dropdown],
+            outputs=[style_template_info]
+        )
+        
+        # 应用风格模板
+        def apply_style_with_preview(video_input, template_name, apply_color, apply_filters, apply_speed):
+            """应用风格并自动更新预览"""
+            print(f"[风格模板] 开始应用风格: {template_name}")
+            
+            # 应用风格
+            styled_video, message = apply_style_template(
+                video_input, template_name, apply_color, apply_filters, apply_speed
+            )
+            
+            # 如果成功，更新预览
+            if styled_video:
+                print(f"[风格模板] 应用成功，更新预览")
+                preview_video, video_info = ui_manager.handle_preview_update(styled_video)
+                return styled_video, message, preview_video, video_info
+            else:
+                print(f"[风格模板] 应用失败")
+                return None, message, None, ""
+        
+        apply_style_btn.click(
+            apply_style_with_preview,
+            inputs=[
+                video_output,  # 使用裁剪后的视频
+                style_template_dropdown,
+                apply_color_grading,
+                apply_filters,
+                apply_speed
+            ],
+            outputs=[
+                style_output_video, 
+                style_message,
+                preview_export_components['preview_video'],
+                preview_export_components['video_info_text']
+            ]
+        )
+        
         # 🎬 预览与导出功能的回调绑定
         ui_manager = preview_export_components['ui_manager']
         
@@ -423,6 +580,16 @@ if __name__ == "__main__":
                 preview_export_components['video_info_text']
             ]
         )
+        
+        # 当风格化视频更新时，也自动刷新预览
+        style_output_video.change(
+            auto_refresh_preview,
+            inputs=[style_output_video],
+            outputs=[
+                preview_export_components['preview_video'],
+                preview_export_components['video_info_text']
+            ]
+        )
 
         # 当导出结果更新时，也同步刷新预览（便于查看不同导出参数效果）
         preview_export_components['export_video_output'].change(
@@ -434,11 +601,26 @@ if __name__ == "__main__":
             ]
         )
         
+        # 导出功能：优先使用风格化视频，如果没有则使用裁剪结果
+        def smart_export(clip_video, styled_video, resolution, platform, output_path, 
+                        custom_width, custom_height, custom_bitrate, custom_fps):
+            """智能选择导出源：优先风格化视频"""
+            source_video = styled_video if styled_video else clip_video
+            if not source_video:
+                return None, "❌ 没有可导出的视频", None, ""
+            
+            print(f"[导出] 导出源: {'风格化视频' if styled_video else '裁剪视频'}")
+            return ui_manager.handle_export(
+                source_video, resolution, platform, output_path,
+                custom_width, custom_height, custom_bitrate, custom_fps
+            )
+        
         # 绑定导出按钮
         preview_export_components['export_btn'].click(
-            ui_manager.handle_export,
+            smart_export,
             inputs=[
-                video_output,  # 使用当前裁剪结果
+                video_output,  # 裁剪结果
+                style_output_video,  # 风格化结果
                 preview_export_components['resolution'],
                 preview_export_components['platform'],
                 preview_export_components['output_path'],
@@ -455,11 +637,26 @@ if __name__ == "__main__":
             ]
         )
 
+        # 导出预览：优先使用风格化视频
+        def smart_export_preview(clip_video, styled_video, resolution, platform,
+                                custom_width, custom_height, custom_bitrate, custom_fps):
+            """智能选择预览源：优先风格化视频"""
+            source_video = styled_video if styled_video else clip_video
+            if not source_video:
+                return None, "", "❌ 没有可预览的视频"
+            
+            print(f"[导出预览] 预览源: {'风格化视频' if styled_video else '裁剪视频'}")
+            return ui_manager.handle_export_preview(
+                source_video, resolution, platform,
+                custom_width, custom_height, custom_bitrate, custom_fps
+            )
+        
         # 绑定导出预览按钮（仅生成前3秒轻量预览）
         preview_export_components['export_preview_btn'].click(
-            ui_manager.handle_export_preview,
+            smart_export_preview,
             inputs=[
                 video_output,
+                style_output_video,
                 preview_export_components['resolution'],
                 preview_export_components['platform'],
                 preview_export_components['custom_width'],
@@ -474,11 +671,25 @@ if __name__ == "__main__":
             ]
         )
         
+        # 批量导出：优先使用风格化视频
+        def smart_batch_export(clip_video, styled_video, batch_resolutions, 
+                              batch_platforms, batch_output_dir):
+            """智能批量导出：优先风格化视频"""
+            source_video = styled_video if styled_video else clip_video
+            if not source_video:
+                return None, "❌ 没有可导出的视频", None, ""
+            
+            print(f"[批量导出] 导出源: {'风格化视频' if styled_video else '裁剪视频'}")
+            return ui_manager.handle_batch_export(
+                source_video, batch_resolutions, batch_platforms, batch_output_dir
+            )
+        
         # 绑定批量导出按钮
         preview_export_components['batch_export_btn'].click(
-            ui_manager.handle_batch_export,
+            smart_batch_export,
             inputs=[
                 video_output,
+                style_output_video,
                 preview_export_components['batch_resolutions'],
                 preview_export_components['batch_platforms'],
                 preview_export_components['batch_output_dir']
