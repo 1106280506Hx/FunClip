@@ -15,6 +15,7 @@ from llm.qwen_api import call_qwen_model
 from llm.g4f_openai_api import g4f_openai_call
 from utils.trans_utils import extract_timestamps
 from introduction import top_md_1, top_md_3, top_md_4
+from utils.preview_components import create_integrated_preview_export_ui
 import time
 import logging
 from accelerate.logging import get_logger
@@ -310,6 +311,9 @@ if __name__ == "__main__":
                         inputs=[video_input, music_root_input, semantic_state_data, custom_bgm_input], # 增加了 custom_bgm_input
                         outputs=[music_out_video, music_log]
                     )
+                
+                # 🎬 预览与导出 Tab
+                preview_export_components = create_integrated_preview_export_ui()
                     
                 with gr.Row():
                     font_size = gr.Slider(minimum=10, maximum=100, value=32, step=2, label="🔠 字幕字体大小 | Subtitle Font Size")
@@ -388,6 +392,104 @@ if __name__ == "__main__":
                                    output_dir,
                                    ],
                            outputs=[video_output, audio_output, clip_message, srt_clipped])
+        
+        # 🎬 预览与导出功能的回调绑定
+        ui_manager = preview_export_components['ui_manager']
+        
+        # 刷新预览 - 当视频输出更新时自动刷新
+        def auto_refresh_preview(video_path):
+            return ui_manager.handle_preview_update(video_path)
+
+        # 使用导出结果刷新预览
+        def auto_refresh_preview_from_export(video_path):
+            return ui_manager.handle_preview_update(video_path)
+        
+        # 绑定刷新预览按钮
+        preview_export_components['refresh_preview_btn'].click(
+            auto_refresh_preview,
+            inputs=[video_output],
+            outputs=[
+                preview_export_components['preview_video'],
+                preview_export_components['video_info_text']
+            ]
+        )
+        
+        # 当video_output更新时，自动刷新预览
+        video_output.change(
+            auto_refresh_preview,
+            inputs=[video_output],
+            outputs=[
+                preview_export_components['preview_video'],
+                preview_export_components['video_info_text']
+            ]
+        )
+
+        # 当导出结果更新时，也同步刷新预览（便于查看不同导出参数效果）
+        preview_export_components['export_video_output'].change(
+            auto_refresh_preview_from_export,
+            inputs=[preview_export_components['export_video_output']],
+            outputs=[
+                preview_export_components['preview_video'],
+                preview_export_components['video_info_text']
+            ]
+        )
+        
+        # 绑定导出按钮
+        preview_export_components['export_btn'].click(
+            ui_manager.handle_export,
+            inputs=[
+                video_output,  # 使用当前裁剪结果
+                preview_export_components['resolution'],
+                preview_export_components['platform'],
+                preview_export_components['output_path'],
+                preview_export_components['custom_width'],
+                preview_export_components['custom_height'],
+                preview_export_components['custom_bitrate'],
+                preview_export_components['custom_fps']
+            ],
+            outputs=[
+                preview_export_components['export_video_output'],
+                preview_export_components['export_message'],
+                preview_export_components['preview_video'],
+                preview_export_components['video_info_text']
+            ]
+        )
+
+        # 绑定导出预览按钮（仅生成前3秒轻量预览）
+        preview_export_components['export_preview_btn'].click(
+            ui_manager.handle_export_preview,
+            inputs=[
+                video_output,
+                preview_export_components['resolution'],
+                preview_export_components['platform'],
+                preview_export_components['custom_width'],
+                preview_export_components['custom_height'],
+                preview_export_components['custom_bitrate'],
+                preview_export_components['custom_fps']
+            ],
+            outputs=[
+                preview_export_components['preview_video'],
+                preview_export_components['video_info_text'],
+                preview_export_components['export_message']
+            ]
+        )
+        
+        # 绑定批量导出按钮
+        preview_export_components['batch_export_btn'].click(
+            ui_manager.handle_batch_export,
+            inputs=[
+                video_output,
+                preview_export_components['batch_resolutions'],
+                preview_export_components['batch_platforms'],
+                preview_export_components['batch_output_dir']
+            ],
+            outputs=[
+                preview_export_components['export_video_output'],
+                preview_export_components['export_message'],
+                preview_export_components['preview_video'],
+                preview_export_components['video_info_text']
+            ]
+        )
     
     # start gradio service in local or share
     if args.listen:

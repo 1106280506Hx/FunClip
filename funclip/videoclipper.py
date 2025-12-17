@@ -30,6 +30,7 @@ from utils.preprocess_audio import preprocess_audio_once
 from moviepy.editor import VideoFileClip, AudioFileClip, CompositeAudioClip, concatenate_videoclips, vfx
 from utils.music_manager import MusicManager 
 from utils.director import Director
+from utils.export_manager import ExportManager, VideoPreviewManager
 import librosa
 from utils.transitions import TransFX
 
@@ -40,6 +41,8 @@ class VideoClipper():
         self.GLOBAL_COUNT = 0
         self.video_understander = None
         self.shot_detector = None
+        self.export_manager = ExportManager()
+        self.preview_manager = VideoPreviewManager()
 
     def init_semantic_understander(self, model_path, device="cuda"):
         try:
@@ -710,6 +713,54 @@ class VideoClipper():
         final_video_clip.write_videofile(output_path, audio_codec='aac')
         
         return output_path, f"Success.\nBGM: {os.path.basename(bgm_path)}\nSummary: {global_summary}"
+    
+    def export_video_with_preset(self, video_path, output_path, resolution="原始/Original", 
+                                  platform="通用/Universal", **kwargs):
+        """
+        使用预设参数导出视频
+        
+        参数:
+            video_path: 输入视频路径
+            output_path: 输出视频路径
+            resolution: 分辨率预设
+            platform: 平台预设
+            **kwargs: 其他自定义参数
+        
+        返回:
+            (成功标志, 消息)
+        """
+        return self.export_manager.export_video(
+            video_path, output_path, resolution, platform, **kwargs
+        )
+    
+    def batch_export_video(self, video_path, output_dir, resolutions, platforms):
+        """
+        批量导出视频
+        
+        参数:
+            video_path: 输入视频路径
+            output_dir: 输出目录
+            resolutions: 分辨率列表
+            platforms: 平台列表
+        
+        返回:
+            导出结果字典
+        """
+        return self.export_manager.batch_export(
+            video_path, output_dir, resolutions, platforms
+        )
+    
+    def get_video_preview_info(self, video_path):
+        """
+        获取视频预览信息
+        
+        参数:
+            video_path: 视频文件路径
+        
+        返回:
+            视频信息字典
+        """
+        return self.preview_manager.get_video_info(video_path)
 
 def get_parser():
     parser = ArgumentParser(
