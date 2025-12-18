@@ -1,0 +1,321 @@
+{
+  "templates": {
+    "清新自然/Fresh & Natural": {
+      "description": "清新明亮的风格，适合生活vlog、旅游视频",
+      "color_grading": {
+        "brightness": 1.1,
+        "contrast": 1.05,
+        "saturation": 1.15,
+        "temperature": 1.05,
+        "gamma": 1.0
+      },
+      "subtitle": {
+        "font_size": 36,
+        "font_color": "white",
+        "stroke_color": "black",
+        "stroke_width": 2,
+        "position": "bottom",
+        "font_name": "STHeitiMedium.ttc"
+      },
+      "transition": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "filters": ["brighten", "soft_contrast"],
+      "speed": 1.0,
+      "music_style": "relaxing"
+    },
+    "电影质感/Cinematic": {
+      "description": "电影级画面质感，适合叙事类视频",
+      "color_grading": {
+        "brightness": 0.95,
+        "contrast": 1.2,
+        "saturation": 0.9,
+        "temperature": 0.95,
+        "gamma": 0.95
+      },
+      "subtitle": {
+        "font_size": 32,
+        "font_color": "white",
+        "stroke_color": "#1a1a1a",
+        "stroke_width": 3,
+        "position": "bottom",
+        "font_name": "STHeitiMedium.ttc"
+      },
+      "transition": {
+        "type": "crossfade",
+        "duration": 0.8
+      },
+      "filters": ["darken", "high_contrast", "vignette"],
+      "speed": 0.95,
+      "music_style": "emotional",
+      "aspect_ratio": "21:9"
+    },
+    "活力动感/Energetic": {
+      "description": "快节奏、高饱和度，适合运动、音乐视频",
+      "color_grading": {
+        "brightness": 1.15,
+        "contrast": 1.25,
+        "saturation": 1.3,
+        "temperature": 1.0,
+        "gamma": 1.05
+      },
+      "subtitle": {
+        "font_size": 42,
+        "font_color": "#FFD700",
+        "stroke_color": "black",
+        "stroke_width": 4,
+        "position": "bottom",
+        "font_name": "STHeitiMedium.ttc"
+      },
+      "transition": {
+        "type": "wipe",
+        "duration": 0.3
+      },
+      "filters": ["saturate", "sharpen"],
+      "speed": 1.1,
+      "music_style": "energetic"
+    },
+    "复古怀旧/Vintage": {
+      "description": "复古胶片质感，适合怀旧主题视频",
+      "color_grading": {
+        "brightness": 0.9,
+        "contrast": 1.1,
+        "saturation": 0.75,
+        "temperature": 1.15,
+        "gamma": 1.1
+      },
+      "subtitle": {
+        "font_size": 34,
+        "font_color": "#F5DEB3",
+        "stroke_color": "#4A4A4A",
+        "stroke_width": 2,
+        "position": "bottom",
+        "font_name": "STHeitiMedium.ttc"
+      },
+      "transition": {
+        "type": "fade",
+        "duration": 1.0
+      },
+      "filters": ["sepia", "grain", "vignette"],
+      "speed": 0.9,
+      "music_style": "love"
+    },
+    "商务专业/Professional": {
+      "description": "简洁专业的风格，适合商务演示、教程视频",
+      "color_grading": {
+        "brightness": 1.0,
+        "contrast": 1.1,
+        "saturation": 0.95,
+        "temperature": 1.0,
+        "gamma": 1.0
+      },
+      "subtitle": {
+        "font_size": 38,
+        "font_color": "white",
+        "stroke_color": "#2C3E50",
+        "stroke_width": 2,
+        "position": "bottom",
+        "font_name": "STHeitiMedium.ttc"
+      },
+      "transition": {
+        "type": "crossfade",
+        "duration": 0.4
+      },
+      "filters": ["clarity"],
+      "speed": 1.0,
+      "music_style": "tech-focused"
+    },
+    "梦幻浪漫/Dreamy": {
+      "description": "柔和梦幻的氛围，适合爱情、婚礼视频",
+      "color_grading": {
+        "brightness": 1.1,
+        "contrast": 0.95,
+        "saturation": 1.1,
+        "temperature": 1.1,
+        "gamma": 1.05
+      },
+      "subtitle": {
+        "font_size": 36,
+        "font_color": "#FFB6C1",
+        "stroke_color": "white",
+        "stroke_width": 1,
+        "position": "bottom",
+        "font_name": "STHeitiMedium.ttc"
+      },
+      "transition": {
+        "type": "fade",
+        "duration": 1.2
+      },
+      "filters": ["soft_focus", "bloom"],
+      "speed": 0.85,
+      "music_style": "love"
+    },
+    "科技未来/Tech": {
+      "description": "现代科技感，适合产品展示、科技内容",
+      "color_grading": {
+        "brightness": 1.0,
+        "contrast": 1.15,
+        "saturation": 1.0,
+        "temperature": 0.9,
+        "gamma": 1.0
+      },
+      "subtitle": {
+        "font_size": 40,
+        "font_color": "#00FFFF",
+        "stroke_color": "#003366",
+        "stroke_width": 3,
+        "position": "bottom",
+        "font_name": "STHeitiMedium.ttc"
+      },
+      "transition": {
+        "type": "slide",
+        "duration": 0.5
+      },
+      "filters": ["cool_tone", "sharpen"],
+      "speed": 1.05,
+      "music_style": "tech-focused"
+    },
+    "儿童趣味/Playful": {
+      "description": "鲜艳活泼的风格，适合儿童、卡通内容",
+      "color_grading": {
+        "brightness": 1.2,
+        "contrast": 1.1,
+        "saturation": 1.4,
+        "temperature": 1.05,
+        "gamma": 1.0
+      },
+      "subtitle": {
+        "font_size": 44,
+        "font_color": "#FF6B9D",
+        "stroke_color": "#FFEB3B",
+        "stroke_width": 4,
+        "position": "bottom",
+        "font_name": "STHeitiMedium.ttc"
+      },
+      "transition": {
+        "type": "bounce",
+        "duration": 0.4
+      },
+      "filters": ["saturate", "pop"],
+      "speed": 1.15,
+      "music_style": "children"
+    },
+    "纪录片/Documentary": {
+      "description": "真实自然的色调，适合纪录片、新闻",
+      "color_grading": {
+        "brightness": 0.98,
+        "contrast": 1.08,
+        "saturation": 0.9,
+        "temperature": 1.0,
+        "gamma": 1.0
+      },
+      "subtitle": {
+        "font_size": 34,
+        "font_color": "white",
+        "stroke_color": "black",
+        "stroke_width": 2,
+        "position": "bottom",
+        "font_name": "STHeitiMedium.ttc"
+      },
+      "transition": {
+        "type": "cut",
+        "duration": 0.1
+      },
+      "filters": ["neutral"],
+      "speed": 1.0,
+      "music_style": "focusing"
+    },
+    "喜剧搞笑/Comedy": {
+      "description": "夸张鲜明的风格，适合搞笑、娱乐视频",
+      "color_grading": {
+        "brightness": 1.15,
+        "contrast": 1.2,
+        "saturation": 1.25,
+        "temperature": 1.05,
+        "gamma": 1.0
+      },
+      "subtitle": {
+        "font_size": 46,
+        "font_color": "#FFFF00",
+        "stroke_color": "#FF0000",
+        "stroke_width": 5,
+        "position": "bottom",
+        "font_name": "STHeitiMedium.ttc"
+      },
+      "transition": {
+        "type": "zoom",
+        "duration": 0.3
+      },
+      "filters": ["saturate", "pop"],
+      "speed": 1.1,
+      "music_style": "funny"
+    }
+  },
+  "filter_definitions": {
+    "brighten": {
+      "type": "colorx",
+      "factor": 1.1
+    },
+    "darken": {
+      "type": "colorx",
+      "factor": 0.9
+    },
+    "saturate": {
+      "type": "lum_contrast",
+      "lum": 0,
+      "contrast": 0.3
+    },
+    "high_contrast": {
+      "type": "lum_contrast",
+      "lum": 0,
+      "contrast": 0.5
+    },
+    "soft_contrast": {
+      "type": "lum_contrast",
+      "lum": 0.05,
+      "contrast": 0.1
+    },
+    "vignette": {
+      "type": "mask_vignette",
+      "size": 0.8
+    },
+    "sepia": {
+      "type": "colorx",
+      "factor": [1.2, 1.0, 0.8]
+    },
+    "grain": {
+      "type": "noise",
+      "amount": 0.02
+    },
+    "soft_focus": {
+      "type": "blur",
+      "kernel_size": 3
+    },
+    "bloom": {
+      "type": "glow",
+      "intensity": 0.3
+    },
+    "cool_tone": {
+      "type": "colorx",
+      "factor": [0.9, 1.0, 1.1]
+    },
+    "sharpen": {
+      "type": "sharpen",
+      "amount": 0.3
+    },
+    "pop": {
+      "type": "lum_contrast",
+      "lum": 0.1,
+      "contrast": 0.4
+    },
+    "neutral": {
+      "type": "colorx",
+      "factor": 1.0
+    },
+    "clarity": {
+      "type": "sharpen",
+      "amount": 0.2
+    }
+  }
+}
